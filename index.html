@@ -1,0 +1,255 @@
+<!--
+  File: index.html
+  Purpose: Single-file GitHub Pages-friendly YouTube player with custom controls.
+  How to use:
+    1. Save this file as `index.html` at the root of your GitHub repository.
+    2. Commit & push. In GitHub repo settings -> Pages, enable Pages from the `main` (or `master`) branch and root folder.
+    3. Open the page URL. Paste a YouTube link or ID into the box and press "Load".
+
+  Notes:
+    - Uses the YouTube IFrame Player API (no API key required).
+    - Controls: play, pause, seek, volume, fullscreen, current time/duration.
+    - Mobile-friendly and responsive.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Custom YouTube Player — GitHub Page</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#ff0066;--muted:#94a3b8;color-scheme:dark}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial}
+    body{background:linear-gradient(180deg,#071026 0%, #071020 60%);display:flex;align-items:center;justify-content:center;padding:24px;color:#e6eef8}
+
+    .wrap{width:100%;max-width:980px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:18px;box-shadow:0 6px 30px rgba(2,6,23,0.6)}
+
+    h1{margin:0 0 8px;font-size:20px}
+    p.lead{margin:0 0 16px;color:var(--muted)}
+
+    /* Responsive embed wrapper */
+    .player-wrap{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:8px;background:#000}
+    #player{position:absolute;top:0;left:0;width:100%;height:100%;}
+
+    .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;align-items:center}
+    .controls > *{background:rgba(255,255,255,0.03);border:none;padding:8px 12px;border-radius:8px;color:inherit}
+
+    .big-btn{padding:10px 14px;font-weight:600}
+
+    input[type="text"], input[type="range"]{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;color:inherit}
+    .flex{display:flex;gap:8px}
+
+    .time{min-width:96px;text-align:center;color:var(--muted)}
+    .volume{width:160px}
+
+    footer{margin-top:14px;color:var(--muted);font-size:13px}
+
+    @media (max-width:600px){
+      .controls{flex-direction:column;align-items:stretch}
+      .volume{width:100%}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Custom YouTube Player</h1>
+      <p class="lead">Paste a YouTube URL or ID below and press <strong>Load</strong>. This page works on GitHub Pages as <code>index.html</code>.</p>
+
+      <div class="flex" style="margin-bottom:10px">
+        <input id="videoInput" type="text" placeholder="YouTube URL or ID (e.g. https://youtu.be/dQw4w9WgXcQ or dQw4w9WgXcQ)" style="flex:1" />
+        <button id="loadBtn" class="big-btn">Load</button>
+      </div>
+
+      <div class="player-wrap" aria-hidden="false">
+        <div id="player"></div>
+      </div>
+
+      <div class="controls">
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="playBtn">Play</button>
+          <button id="pauseBtn">Pause</button>
+          <button id="rewBtn">« 10s</button>
+          <button id="fwdBtn">10s »</button>
+        </div>
+
+        <div style="flex:1;min-width:220px;display:flex;align-items:center;gap:8px">
+          <input id="seek" type="range" min="0" max="100" value="0" style="flex:1" />
+          <div class="time"><span id="current">0:00</span> / <span id="duration">0:00</span></div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px">
+          <label for="volume">Vol</label>
+          <input id="volume" class="volume" type="range" min="0" max="100" value="100" />
+          <button id="fsBtn">Fullscreen</button>
+        </div>
+      </div>
+
+      <footer>Built with the YouTube IFrame API — no API key required. Works on GitHub Pages.</footer>
+    </div>
+  </div>
+
+  <!-- YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script>
+    // --- Utility: extract video id from various YouTube URL forms ---
+    function extractVideoId(input) {
+      if (!input) return null;
+      input = input.trim();
+      // direct id (11+ chars usually)
+      const idRegex = /^[a-zA-Z0-9_-]{6,}$/;
+      if (idRegex.test(input)) return input;
+      // try common URL patterns
+      try {
+        const url = new URL(input.indexOf('http') === 0 ? input : 'https://' + input);
+        // youtu.be short link
+        if (url.hostname.includes('youtu.be')) return url.pathname.slice(1);
+        // youtube.com watch?v=ID
+        if (url.searchParams.has('v')) return url.searchParams.get('v');
+        // embed path
+        const parts = url.pathname.split('/');
+        const maybe = parts.pop() || parts.pop();
+        if (maybe && /^[a-zA-Z0-9_-]{6,}$/.test(maybe)) return maybe;
+      } catch (e) {
+        // fallback: regex
+        const m = input.match(/v=([a-zA-Z0-9_-]{6,})/) || input.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/);
+        if (m) return m[1];
+      }
+      return null;
+    }
+
+    // --- Player state ---
+    let player = null;
+    let updateTimer = null;
+
+    // Called by YouTube API once it's ready
+    function onYouTubeIframeAPIReady() {
+      // create a small placeholder player (empty) so we can control it immediately
+      player = new YT.Player('player', {
+        height: '360',
+        width: '640',
+        videoId: '',
+        playerVars: { 'playsinline': 1, 'rel': 0, 'showinfo': 0 },
+        events: {
+          'onReady': onPlayerReady,
+          'onStateChange': onPlayerStateChange
+        }
+      });
+    }
+
+    function onPlayerReady() {
+      // hook UI
+      document.getElementById('loadBtn').addEventListener('click', loadFromInput);
+      document.getElementById('playBtn').addEventListener('click', () => player.playVideo());
+      document.getElementById('pauseBtn').addEventListener('click', () => player.pauseVideo());
+      document.getElementById('rewBtn').addEventListener('click', () => seekBy(-10));
+      document.getElementById('fwdBtn').addEventListener('click', () => seekBy(10));
+      document.getElementById('volume').addEventListener('input', (e) => player.setVolume(e.target.value));
+      document.getElementById('seek').addEventListener('input', onSeekInput);
+      document.getElementById('fsBtn').addEventListener('click', toggleFullscreen);
+
+      // keyboard: space to play/pause
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT') {
+          e.preventDefault();
+          const state = player.getPlayerState();
+          if (state === YT.PlayerState.PLAYING) player.pauseVideo(); else player.playVideo();
+        }
+      });
+
+      // update UI
+      updateTimer = setInterval(updateUI, 500);
+    }
+
+    function onPlayerStateChange(event) {
+      // keep UI in sync; could be extended for buffering, ended, etc.
+      updateUI();
+    }
+
+    function loadFromInput() {
+      const raw = document.getElementById('videoInput').value;
+      const id = extractVideoId(raw);
+      if (!id) {
+        alert('Could not detect a YouTube video ID from that input. Try a full URL or the raw ID.');
+        return;
+      }
+      // if player exists, load by id, otherwise create it
+      if (player && typeof player.loadVideoById === 'function') {
+        player.loadVideoById(id);
+      } else {
+        // fallback: recreate player
+        player = new YT.Player('player', { videoId: id, events: { 'onReady': onPlayerReady }});
+      }
+    }
+
+    function seekBy(seconds) {
+      try {
+        const t = player.getCurrentTime() + seconds;
+        player.seekTo(Math.max(0, t), true);
+      } catch (e) { console.warn(e); }
+    }
+
+    function onSeekInput(e) {
+      const pct = e.target.value / 100;
+      const dur = player.getDuration() || 0;
+      const target = dur * pct;
+      player.seekTo(target, true);
+    }
+
+    function updateUI() {
+      if (!player || typeof player.getDuration !== 'function') return;
+      const dur = player.getDuration() || 0;
+      const cur = player.getCurrentTime ? player.getCurrentTime() : 0;
+      // update ranges
+      const seek = document.getElementById('seek');
+      seek.max = 100;
+      seek.value = dur ? Math.round((cur / dur) * 100) : 0;
+      document.getElementById('current').textContent = formatTime(cur);
+      document.getElementById('duration').textContent = formatTime(dur);
+      // sync volume slider if changed elsewhere
+      try { document.getElementById('volume').value = player.getVolume(); } catch (e) {}
+    }
+
+    function formatTime(s) {
+      s = Math.max(0, Math.floor(s || 0));
+      const mm = Math.floor(s / 60);
+      const ss = s % 60;
+      return mm + ':' + (ss < 10 ? '0' : '') + ss;
+    }
+
+    function toggleFullscreen() {
+      const el = document.querySelector('.player-wrap');
+      if (!document.fullscreenElement) {
+        el.requestFullscreen?.();
+      } else {
+        document.exitFullscreen?.();
+      }
+    }
+
+    // convenience: allow loading by adding ?v=VIDEOID in page URL
+    (function checkQueryForVideo() {
+      try {
+        const qp = new URLSearchParams(location.search);
+        if (qp.has('v')) {
+          const vid = qp.get('v');
+          document.getElementById('videoInput').value = vid;
+          // If API already ready, load; otherwise onYouTubeIframeAPIReady will create placeholder and interval will pick it up.
+          const t = setInterval(() => {
+            if (typeof YT !== 'undefined' && YT && YT.Player) {
+              clearInterval(t);
+              if (!player || typeof player.loadVideoById !== 'function') {
+                player = new YT.Player('player', { videoId: vid, events: { 'onReady': onPlayerReady }});
+              } else {
+                player.loadVideoById(vid);
+              }
+            }
+          }, 200);
+        }
+      } catch (e) { /* ignore */ }
+    })();
+
+  </script>
+</body>
+</html>
