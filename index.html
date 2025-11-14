@@ -156,7 +156,7 @@
 <script src="https://www.youtube.com/iframe_api"></script>
 
 <script>
-/* ---------- PLAYER CODE (unchanged) ---------- */
+/* ---------- PLAYER CODE (Fixed) ---------- */
 
 function extractVideoId(input){
   if(!input) return null;
@@ -184,7 +184,9 @@ function onYouTubeIframeAPIReady(){
   player=new YT.Player('player',{
     videoId:'',
     playerVars:{playsinline:1,rel:0,showinfo:0},
-    events:{onReady:onPlayerReady,onStateChange:onPlayerStateChange}
+
+    /* FIXED — removed the broken callback */
+    events:{onReady:onPlayerReady}
   });
 }
 
@@ -236,42 +238,39 @@ function toggleFullscreen(){
   else document.exitFullscreen();
 }
 
-/* ---------- CREATOR SEARCH (fixed & upgraded) ---------- */
+/* ---------- CREATOR SEARCH (Full Playlist) ---------- */
 
 const API_KEY = "AIzaSyDq9mq1cUuXpkE38juZiYJIDpg0oK8eVno";
 
-/* Step 1: Search channel by name → get channelId */
 async function searchCreator(){
   const name = creatorName.value.trim();
   if(!name) return alert("Enter a creator name.");
 
-  const channelReq = await fetch(
+  // Find channel
+  const channelRes = await fetch(
     `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(name)}&key=${API_KEY}`
   );
-  const channelData = await channelReq.json();
-
+  const channelData = await channelRes.json();
   if(!channelData.items?.length) return alert("No channel found.");
 
   const channelId = channelData.items[0].id.channelId;
 
-  /* Step 2: Get the Uploads playlist ID */
-  const detailsReq = await fetch(
+  // Get uploads playlist
+  const detailRes = await fetch(
     `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${API_KEY}`
   );
-  const detailsData = await detailsReq.json();
+  const detailData = await detailRes.json();
+  const uploadsPlaylistId = detailData.items[0].contentDetails.relatedPlaylists.uploads;
 
-  const uploadsPlaylistId =
-    detailsData.items[0].contentDetails.relatedPlaylists.uploads;
-
-  /* Step 3: Fetch ALL videos from uploads playlist */
+  // Fetch all videos
   let videos = [];
   let nextPage = "";
 
   while(true){
-    const vidReq = await fetch(
+    const vidRes = await fetch(
       `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&pageToken=${nextPage}&key=${API_KEY}`
     );
-    const vidData = await vidReq.json();
+    const vidData = await vidRes.json();
 
     videos.push(...vidData.items);
 
@@ -282,7 +281,6 @@ async function searchCreator(){
   displayVideos(videos);
 }
 
-/* Step 4: Display on right panel */
 function displayVideos(videos){
   const list=document.getElementById("videoList");
   list.innerHTML="";
