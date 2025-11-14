@@ -13,6 +13,7 @@
     color:#e6eef8;
     padding:24px;
     box-sizing:border-box;
+    position:relative;
   }
 
   .layout{
@@ -21,7 +22,6 @@
   }
 
   .left{ flex:3; }
-
   .right{
     flex:2;
     background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
@@ -46,11 +46,9 @@
     border-radius:8px;
     background:#000;
   }
-  #player{
-    position:absolute;top:0;left:0;width:100%;height:100%;
-  }
+  #player{position:absolute;top:0;left:0;width:100%;height:100%;}
 
-  input[type="text"], input[type="range"]{
+  input[type="text"], input[type="password"], input[type="range"]{
     background:transparent;
     border:1px solid rgba(255,255,255,0.06);
     padding:8px 10px;
@@ -67,36 +65,27 @@
     cursor:pointer;
   }
 
-  .big-btn{
-    padding:10px 14px;
-    font-weight:600;
-  }
+  .big-btn{padding:10px 14px;font-weight:600;}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;align-items:center}
+  .video-item{display:flex;gap:10px;margin-bottom:10px;cursor:pointer;background:#111a2a;border-radius:8px;padding:10px;transition:0.2s;}
+  .video-item:hover{background:#1b2741;}
+  .video-item img{width:120px;border-radius:6px;}
 
-  .controls{
-    display:flex;
-    flex-wrap:wrap;
-    gap:10px;
-    margin-top:12px;
-    align-items:center
+  /* LOGIN PANEL */
+  #loginPanel{
+    position:fixed;
+    bottom:20px;
+    left:20px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+    padding:16px;
+    border-radius:12px;
+    width:220px;
+    box-shadow:0 6px 20px rgba(0,0,0,0.5);
   }
-
-  .video-item{
-    display:flex;
-    gap:10px;
-    margin-bottom:10px;
-    cursor:pointer;
-    background:#111a2a;
-    border-radius:8px;
-    padding:10px;
-    transition:0.2s;
-  }
-  .video-item:hover{
-    background:#1b2741;
-  }
-  .video-item img{
-    width:120px;
-    border-radius:6px;
-  }
+  #loginPanel h3{margin-top:0;font-size:16px;}
+  #loginPanel input{margin-bottom:8px;width:100%;}
+  #loginPanel button{width:100%;margin-bottom:4px;}
+  #currentUser{margin-top:8px;font-size:13px;color:var(--muted);}
 </style>
 </head>
 
@@ -110,7 +99,7 @@
       <h1>Doug's YouTube Player</h1>
       <p class="lead">Paste a YouTube URL below and press <strong>Load</strong>.</p>
 
-      <div class="flex" style="display:flex;gap:10px;margin-bottom:10px">
+      <div style="display:flex;gap:10px;margin-bottom:10px">
         <input id="videoInput" type="text" placeholder="YouTube URL or ID" style="flex:1" />
         <button id="loadBtn" class="big-btn">Load</button>
       </div>
@@ -153,151 +142,166 @@
 
 </div>
 
-<script src="https://www.youtube.com/iframe_api"></script>
+<!-- LOGIN PANEL -->
+<div id="loginPanel">
+  <h3>Account</h3>
+  <input type="text" id="username" placeholder="Username">
+  <input type="password" id="password" placeholder="Password">
+  <button onclick="signUp()">Sign Up</button>
+  <button onclick="logIn()">Log In</button>
+  <div id="currentUser">Not logged in</div>
+</div>
 
-<script>
-/* ---------- PLAYER CODE (Fixed) ---------- */
+<!-- Firebase SDKs -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
-function extractVideoId(input){
-  if(!input) return null;
-  input=input.trim();
-  const idRegex=/^[a-zA-Z0-9_-]{6,}$/;
-  if(idRegex.test(input)) return input;
-  try{
-    const url=new URL(input.indexOf('http')===0?input:'https://'+input);
-    if(url.hostname.includes('youtu.be')) return url.pathname.slice(1);
-    if(url.searchParams.has('v')) return url.searchParams.get('v');
-    const parts=url.pathname.split('/');
-    const maybe=parts.pop()||parts.pop();
-    if(maybe && idRegex.test(maybe)) return maybe;
-  }catch(e){
-    const m=input.match(/v=([a-zA-Z0-9_-]{6,})/)||input.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/);
-    if(m) return m[1];
-  }
-  return null;
-}
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+    projectId: "YOUR_PROJECT",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
 
-let player=null;
-let updateTimer=null;
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
 
-function onYouTubeIframeAPIReady(){
-  player=new YT.Player('player',{
-    videoId:'',
-    playerVars:{playsinline:1,rel:0,showinfo:0},
+  let currentUserName = null;
 
-    /* FIXED — removed the broken callback */
-    events:{onReady:onPlayerReady}
-  });
-}
+  async function signUp() {
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value.trim();
+    if(!username || !password) return alert("Enter username & password");
 
-function onPlayerReady(){
-  loadBtn.onclick=loadFromInput;
-  playBtn.onclick=()=>player.playVideo();
-  pauseBtn.onclick=()=>player.pauseVideo();
-  rewBtn.onclick=()=>seekBy(-10);
-  fwdBtn.onclick=()=>seekBy(10);
-  volume.oninput=e=>player.setVolume(e.target.value);
-  seek.oninput=onSeekInput;
-  fsBtn.onclick=toggleFullscreen;
-  updateTimer=setInterval(updateUI,500);
-}
+    const userRef = doc(db, "users", username);
+    const snap = await getDoc(userRef);
+    if(snap.exists()){ alert("Username exists"); return; }
 
-function loadFromInput(){
-  const raw=videoInput.value;
-  const id=extractVideoId(raw);
-  if(!id) return alert("Couldn't read video ID.");
-  player.loadVideoById(id);
-}
-
-function seekBy(s){
-  player.seekTo(Math.max(0,player.getCurrentTime()+s),true);
-}
-
-function onSeekInput(e){
-  player.seekTo(player.getDuration()*(e.target.value/100),true);
-}
-
-function updateUI(){
-  if(!player) return;
-  const dur=player.getDuration()||0;
-  const cur=player.getCurrentTime()||0;
-  seek.value = dur?Math.round((cur/dur)*100):0;
-  current.textContent=formatTime(cur);
-  duration.textContent=formatTime(dur);
-  volume.value=player.getVolume();
-}
-
-function formatTime(s){
-  s=Math.max(0,Math.floor(s||0));
-  return Math.floor(s/60)+":"+(s%60<10?"0":"")+(s%60);
-}
-
-function toggleFullscreen(){
-  const el=document.querySelector('.player-wrap');
-  if(!document.fullscreenElement) el.requestFullscreen();
-  else document.exitFullscreen();
-}
-
-/* ---------- CREATOR SEARCH (Full Playlist) ---------- */
-
-const API_KEY = "AIzaSyDq9mq1cUuXpkE38juZiYJIDpg0oK8eVno";
-
-async function searchCreator(){
-  const name = creatorName.value.trim();
-  if(!name) return alert("Enter a creator name.");
-
-  // Find channel
-  const channelRes = await fetch(
-    `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(name)}&key=${API_KEY}`
-  );
-  const channelData = await channelRes.json();
-  if(!channelData.items?.length) return alert("No channel found.");
-
-  const channelId = channelData.items[0].id.channelId;
-
-  // Get uploads playlist
-  const detailRes = await fetch(
-    `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${API_KEY}`
-  );
-  const detailData = await detailRes.json();
-  const uploadsPlaylistId = detailData.items[0].contentDetails.relatedPlaylists.uploads;
-
-  // Fetch all videos
-  let videos = [];
-  let nextPage = "";
-
-  while(true){
-    const vidRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&pageToken=${nextPage}&key=${API_KEY}`
-    );
-    const vidData = await vidRes.json();
-
-    videos.push(...vidData.items);
-
-    if(!vidData.nextPageToken) break;
-    nextPage = vidData.nextPageToken;
+    await setDoc(userRef, { password, favorites: [] });
+    alert("Account created!");
   }
 
-  displayVideos(videos);
-}
+  async function logIn() {
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value.trim();
+    if(!username || !password) return alert("Enter username & password");
 
-function displayVideos(videos){
-  const list=document.getElementById("videoList");
-  list.innerHTML="";
+    const userRef = doc(db, "users", username);
+    const snap = await getDoc(userRef);
+    if(!snap.exists()){ alert("User not found"); return; }
 
-  videos.forEach(v=>{
-    const vid = v.snippet.resourceId.videoId;
-    const title = v.snippet.title;
-    const thumb = v.snippet.thumbnails.medium.url;
+    if(snap.data().password !== password){ alert("Incorrect password"); return; }
 
-    const item=document.createElement("div");
-    item.className="video-item";
-    item.onclick=()=>player.loadVideoById(vid);
-    item.innerHTML=`<img src="${thumb}"><div><strong>${title}</strong></div>`;
-    list.appendChild(item);
-  });
-}
+    currentUserName = username;
+    document.getElementById("currentUser").textContent = "Logged in: " + username;
+    alert("Logged in!");
+    loadFavorites();
+  }
+
+  async function addFavorite(channelId){
+    if(!currentUserName) return alert("Log in first");
+    const userRef = doc(db, "users", currentUserName);
+    await updateDoc(userRef, { favorites: arrayUnion(channelId) });
+    loadFavorites();
+  }
+
+  async function loadFavorites(){
+    if(!currentUserName) return;
+    const userRef = doc(db, "users", currentUserName);
+    const snap = await getDoc(userRef);
+    const favorites = snap.data()?.favorites || [];
+    const list = document.getElementById("videoList");
+    list.innerHTML = "";
+    for(const ch of favorites){
+      const div = document.createElement("div");
+      div.className = "video-item";
+      div.textContent = ch + " (favorite)";
+      div.onclick = ()=>document.getElementById("creatorName").value = ch;
+      list.appendChild(div);
+    }
+  }
+
+  /* ----------------- YouTube Player ----------------- */
+  let player=null;
+  function extractVideoId(input){
+    if(!input) return null;
+    input=input.trim();
+    const idRegex=/^[a-zA-Z0-9_-]{6,}$/;
+    if(idRegex.test(input)) return input;
+    try{
+      const url=new URL(input.indexOf('http')===0?input:'https://'+input);
+      if(url.hostname.includes('youtu.be')) return url.pathname.slice(1);
+      if(url.searchParams.has('v')) return url.searchParams.get('v');
+      const parts=url.pathname.split('/');
+      const maybe=parts.pop()||parts.pop();
+      if(maybe && idRegex.test(maybe)) return maybe;
+    }catch(e){ const m=input.match(/v=([a-zA-Z0-9_-]{6,})/)||input.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/); if(m) return m[1]; }
+    return null;
+  }
+
+  function onYouTubeIframeAPIReady(){ player = new YT.Player('player',{videoId:'',playerVars:{playsinline:1,rel:0,showinfo:0}}); }
+
+  function loadFromInput(){ 
+    const id=extractVideoId(document.getElementById("videoInput").value);
+    if(!id) return alert("Invalid video");
+    player.loadVideoById(id);
+  }
+
+  window.loadFromInput = loadFromInput;
+
+  /* ----------------- Firebase + YouTube Integration ----------------- */
+  const API_KEY = "AIzaSyDq9mq1cUuXpkE38juZiYJIDpg0oK8eVno";
+
+  async function searchCreator(){
+    const name=document.getElementById("creatorName").value.trim();
+    if(!name) return alert("Enter creator name");
+
+    const channelRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(name)}&key=${API_KEY}`);
+    const channelData = await channelRes.json();
+    if(!channelData.items?.length) return alert("No channel found");
+
+    const channelId = channelData.items[0].id.channelId;
+    const detailsRes = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${API_KEY}`);
+    const detailsData = await detailsRes.json();
+    const uploadsId = detailsData.items[0].contentDetails.relatedPlaylists.uploads;
+
+    let videos=[], nextPage="";
+    while(true){
+      const vidsRes = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsId}&maxResults=50&pageToken=${nextPage}&key=${API_KEY}`);
+      const vidsData = await vidsRes.json();
+      videos.push(...vidsData.items);
+      if(!vidsData.nextPageToken) break;
+      nextPage = vidsData.nextPageToken;
+    }
+
+    const list=document.getElementById("videoList");
+    list.innerHTML="";
+    for(const v of videos){
+      const vidId = v.snippet.resourceId.videoId;
+      const thumb = v.snippet.thumbnails.medium.url;
+      const title = v.snippet.title;
+      const div = document.createElement("div");
+      div.className="video-item";
+      div.innerHTML = `<img src="${thumb}"><div><strong>${title}</strong></div>`;
+      div.onclick = ()=>player.loadVideoById(vidId);
+      list.appendChild(div);
+
+      // Add favorite button if logged in
+      if(currentUserName){
+        const favBtn = document.createElement("button");
+        favBtn.textContent="★";
+        favBtn.style.marginLeft="8px";
+        favBtn.onclick = (e)=>{ e.stopPropagation(); addFavorite(name); };
+        div.appendChild(favBtn);
+      }
+    }
+  }
+
 </script>
-
+<script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
