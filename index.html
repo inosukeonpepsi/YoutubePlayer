@@ -142,7 +142,7 @@ function extractVideoId(input){
 function onYouTubeIframeAPIReady(){
   player=new YT.Player('player',{
     videoId:'',
-    host:'https://www.youtube-nocookie.com',
+    host:'https://www.youtube.com',
     playerVars:{playsinline:1,rel:0,modestbranding:1,fs:0},
     events:{onReady:onPlayerReady}
   });
