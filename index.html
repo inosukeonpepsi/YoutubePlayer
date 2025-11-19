@@ -15,13 +15,8 @@
     box-sizing:border-box;
   }
 
-  .layout{
-    display:flex;
-    gap:20px;
-  }
-
+  .layout{display:flex;gap:20px;}
   .left{ flex:3; }
-
   .right{
     flex:2;
     background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
@@ -30,14 +25,12 @@
     max-height:90vh;
     overflow-y:auto;
   }
-
   .card{
     background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
     border-radius:12px;
     padding:18px;
     box-shadow:0 6px 30px rgba(2,6,23,0.6);
   }
-
   .player-wrap{
     position:relative;
     padding-bottom:56.25%;
@@ -46,9 +39,7 @@
     border-radius:8px;
     background:#000;
   }
-  #player{
-    position:absolute;top:0;left:0;width:100%;height:100%;
-  }
+  #player{position:absolute;top:0;left:0;width:100%;height:100%;}
 
   input[type="text"], input[type="range"]{
     background:transparent;
@@ -57,7 +48,6 @@
     border-radius:8px;
     color:inherit;
   }
-
   button{
     background:rgba(255,255,255,0.03);
     border:none;
@@ -66,50 +56,24 @@
     color:inherit;
     cursor:pointer;
   }
-
-  .big-btn{
-    padding:10px 14px;
-    font-weight:600;
-  }
-
-  .controls{
-    display:flex;
-    flex-wrap:wrap;
-    gap:10px;
-    margin-top:12px;
-    align-items:center
-  }
-
+  .big-btn{padding:10px 14px;font-weight:600;}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;align-items:center}
   .video-item{
-    display:flex;
-    gap:10px;
-    margin-bottom:10px;
-    cursor:pointer;
-    background:#111a2a;
-    border-radius:8px;
-    padding:10px;
-    transition:0.2s;
+    display:flex;gap:10px;margin-bottom:10px;cursor:pointer;
+    background:#111a2a;border-radius:8px;padding:10px;transition:0.2s;
   }
-  .video-item:hover{
-    background:#1b2741;
-  }
-  .video-item img{
-    width:120px;
-    border-radius:6px;
-  }
+  .video-item:hover{background:#1b2741;}
+  .video-item img{width:120px;border-radius:6px;}
 </style>
 </head>
 
 <body>
-
 <div class="layout">
-
   <!-- LEFT SIDE -->
   <div class="left">
     <div class="card">
       <h1>Doug's YouTube Player</h1>
       <p class="lead">Paste a YouTube URL below and press <strong>Load</strong>.</p>
-
       <div class="flex" style="display:flex;gap:10px;margin-bottom:10px">
         <input id="videoInput" type="text" placeholder="YouTube URL or ID" style="flex:1" />
         <button id="loadBtn" class="big-btn">Load</button>
@@ -124,12 +88,10 @@
           <button id="rewBtn">« 10s</button>
           <button id="fwdBtn">10s »</button>
         </div>
-
         <div style="flex:1;min-width:220px;display:flex;align-items:center;gap:8px">
           <input id="seek" type="range" min="0" max="100" value="0" style="flex:1" />
           <div class="time"><span id="current">0:00</span> / <span id="duration">0:00</span></div>
         </div>
-
         <div style="display:flex;align-items:center;gap:8px">
           <label for="volume">Vol</label>
           <input id="volume" class="volume" type="range" min="0" max="100" value="100" />
@@ -146,17 +108,17 @@
       <input id="creatorName" type="text" placeholder="Enter creator name..." style="flex:1" />
       <button onclick="searchCreator()">Search</button>
     </div>
-
     <h3>Videos</h3>
     <div id="videoList"></div>
   </div>
-
 </div>
 
+<!-- YouTube IFrame API -->
 <script src="https://www.youtube.com/iframe_api"></script>
-
 <script>
-/* ---------- PLAYER CODE (Fixed) ---------- */
+/* ---------- PLAYER CODE WITH NOCOOKIE ---------- */
+let player=null;
+let updateTimer=null;
 
 function extractVideoId(input){
   if(!input) return null;
@@ -177,15 +139,11 @@ function extractVideoId(input){
   return null;
 }
 
-let player=null;
-let updateTimer=null;
-
 function onYouTubeIframeAPIReady(){
   player=new YT.Player('player',{
     videoId:'',
-    playerVars:{playsinline:1,rel:0,showinfo:0},
-
-    /* FIXED — removed the broken callback */
+    host:'https://www.youtube-nocookie.com',
+    playerVars:{playsinline:1,rel:0,modestbranding:1,fs:0},
     events:{onReady:onPlayerReady}
   });
 }
@@ -203,8 +161,7 @@ function onPlayerReady(){
 }
 
 function loadFromInput(){
-  const raw=videoInput.value;
-  const id=extractVideoId(raw);
+  const id=extractVideoId(videoInput.value);
   if(!id) return alert("Couldn't read video ID.");
   player.loadVideoById(id);
 }
@@ -238,58 +195,44 @@ function toggleFullscreen(){
   else document.exitFullscreen();
 }
 
-/* ---------- CREATOR SEARCH (Full Playlist) ---------- */
-
+/* ---------- CREATOR SEARCH ---------- */
 const API_KEY = "AIzaSyDq9mq1cUuXpkE38juZiYJIDpg0oK8eVno";
 
 async function searchCreator(){
   const name = creatorName.value.trim();
   if(!name) return alert("Enter a creator name.");
-
-  // Find channel
   const channelRes = await fetch(
     `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(name)}&key=${API_KEY}`
   );
   const channelData = await channelRes.json();
   if(!channelData.items?.length) return alert("No channel found.");
-
   const channelId = channelData.items[0].id.channelId;
-
-  // Get uploads playlist
   const detailRes = await fetch(
     `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${API_KEY}`
   );
   const detailData = await detailRes.json();
   const uploadsPlaylistId = detailData.items[0].contentDetails.relatedPlaylists.uploads;
 
-  // Fetch all videos
-  let videos = [];
-  let nextPage = "";
-
+  let videos=[], nextPage="";
   while(true){
-    const vidRes = await fetch(
+    const vidRes=await fetch(
       `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&pageToken=${nextPage}&key=${API_KEY}`
     );
-    const vidData = await vidRes.json();
-
+    const vidData=await vidRes.json();
     videos.push(...vidData.items);
-
     if(!vidData.nextPageToken) break;
-    nextPage = vidData.nextPageToken;
+    nextPage=vidData.nextPageToken;
   }
-
   displayVideos(videos);
 }
 
 function displayVideos(videos){
   const list=document.getElementById("videoList");
   list.innerHTML="";
-
   videos.forEach(v=>{
     const vid = v.snippet.resourceId.videoId;
     const title = v.snippet.title;
     const thumb = v.snippet.thumbnails.medium.url;
-
     const item=document.createElement("div");
     item.className="video-item";
     item.onclick=()=>player.loadVideoById(vid);
